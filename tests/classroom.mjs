@@ -17,6 +17,8 @@ const runtime = mkdtempSync(join(root, '.sites-runtime/classroom-'));
 const config = join(runtime, 'wrangler.json');
 const testPassword = crypto.randomUUID() + crypto.randomUUID();
 const settings = JSON.parse(readFileSync(builtConfig, 'utf8'));
+assert.equal(settings.name, 'borodin-game', 'The default build must target the independent Worker.');
+assert(!settings.r2_buckets?.some(binding => binding.bucket_name === 'site-creator-r2'), 'Independent deployments must not bind the original Sites R2 bucket.');
 assert.equal(settings.vars?.AUTH_MODE, 'password', 'The local classroom test requires the independent password-authenticated build.');
 settings.main = resolve(dirname(builtConfig), settings.main);
 if (settings.assets?.directory) settings.assets.directory = resolve(dirname(builtConfig), settings.assets.directory);

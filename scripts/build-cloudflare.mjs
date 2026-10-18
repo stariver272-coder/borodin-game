@@ -1,8 +1,10 @@
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 // Database IDs identify a binding; Cloudflare still requires account authorization.
-const databaseId = process.env.BORODIN_D1_DATABASE_ID ?? '95db5a47-b245-4ffa-a2b3-477408f52a85';
+const deploymentConfig = JSON.parse(readFileSync(new URL('../deployment/cloudflare.json', import.meta.url), 'utf8'));
+const databaseId = process.env.BORODIN_D1_DATABASE_ID ?? deploymentConfig.database_id;
 if (!databaseId || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(databaseId)
     || databaseId === '00000000-0000-4000-8000-000000000000') {
   throw new Error('Set BORODIN_D1_DATABASE_ID to the Database ID of your existing Cloudflare D1 database before building for deployment.');

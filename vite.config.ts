@@ -1,6 +1,7 @@
 import vinext from "vinext";
 import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
+import deploymentConfig from "./deployment/cloudflare.json";
 import { readExecutionProfile } from "./scripts/execution-profile.mjs";
 import { sites } from "./build/sites-vite-plugin";
 import { connectorPreview } from "./build/connector-preview-plugin.mjs";
@@ -13,7 +14,9 @@ const { d1, r2 } = hostingConfig;
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const managedLinux = readExecutionProfile() === "managed-linux";
-const standalone = process.env.BORODIN_DEPLOY_TARGET === "cloudflare";
+// Clean clones, including Cloudflare Git builds, use independent hosting by default.
+// Original Sites bindings are reserved for its explicit local execution profile.
+const standalone = !managedLinux || process.env.BORODIN_DEPLOY_TARGET === "cloudflare";
 const uploadBucket = standalone ? process.env.BORODIN_R2_BUCKET : "site-creator-r2";
 
 const localBindingConfig = {
@@ -25,7 +28,7 @@ const localBindingConfig = {
         {
           binding: d1,
           database_name: standalone ? (process.env.BORODIN_D1_DATABASE_NAME || "borodin-game-db") : "site-creator-d1",
-          database_id: standalone ? (process.env.BORODIN_D1_DATABASE_ID || SITE_CREATOR_PLACEHOLDER_DATABASE_ID) : SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
+          database_id: standalone ? (process.env.BORODIN_D1_DATABASE_ID ?? deploymentConfig.database_id) : SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
         },
       ]
     : [],
