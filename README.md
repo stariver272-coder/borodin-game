@@ -13,7 +13,7 @@
 ## 在自己的 Cloudflare 账号部署
 
 1. 当前项目已按用户确认配置 D1 Database ID：`95db5a47-b245-4ffa-a2b3-477408f52a85`，正式构建会自动使用它，无需重复创建数据库或填写 ID。打开 **Storage & databases → D1 SQL database**，选择这个数据库。若部署到另一个 Cloudflare 账号，请创建自己的数据库，并用下表的构建变量覆盖 ID。
-2. 打开新数据库的 **Console**，复制 [deployment/initialize.sql](deployment/initialize.sql) 的全部内容，粘贴后点击 **Execute**。完成后会列出六张表：`rooms`、`players`、`ballots`、`portraits`、`host_sessions`、`host_login_limits`。这份初始化 SQL 只创建不存在的表和索引，不删除已有数据。它用于首次部署；后续升级按顺序执行 `drizzle/` 中尚未应用的迁移，已经执行过的迁移不要重放。若之前已有原来的四张表，本次也可只执行 `drizzle/0001_host_auth.sql`。
+2. 打开新数据库的 **Console**，先清空输入框，再复制 [deployment/initialize.sql](deployment/initialize.sql) 的全部内容，粘贴后点击 **Execute**。粘贴的内容应从 `CREATE TABLE` 开始，不包含控制台的 `>` 提示符。文件没有 `--` 行注释，复制时即使丢失换行也能执行；旧版若提示 `No SQL statements detected`，请用此版本替换整个输入框。完成后会列出六张表：`rooms`、`players`、`ballots`、`portraits`、`host_sessions`、`host_login_limits`。这份初始化 SQL 只创建不存在的表和索引，不删除已有数据。它用于首次部署；后续升级按顺序执行 `drizzle/` 中尚未应用的迁移，已经执行过的迁移不要重放。若之前已有原来的四张表，本次也可只执行 `drizzle/0001_host_auth.sql`。
 3. 在 **Workers & Pages → Create application → GitHub** 选择 `the1valid/borodin-game`，Worker 名称填 **borodin-game**，分支选 `main`，项目目录用仓库根目录。
 4. 构建命令填 **`pnpm run build:cloudflare`**，部署命令填 **`pnpm run deploy:cloudflare`**。在构建环境变量中添加下表中的必需设置，然后保存并部署。正式构建使用上面已确认的数据库 ID，普通本地构建仍使用占位 ID，不能通过正式部署脚本发布。
 5. 打开 Worker 的 **Settings → Variables and Secrets → Add**，类型选 **Secret**，名称填 **HOST_PASSWORD**，值填自己生成的至少 16 位随机密码，保存并部署。这个是运行时密钥，不是构建变量；不用发给别人，也不要提交到 GitHub。未设置密码时，主持人登录保持关闭。

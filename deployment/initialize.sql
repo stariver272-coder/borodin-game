@@ -1,7 +1,3 @@
--- Initial setup from drizzle/0000_watery_wallow.sql and drizzle/0001_host_auth.sql.
--- Creates missing tables and indexes without deleting existing data.
--- For future schema upgrades, apply new drizzle migrations instead.
-
 CREATE TABLE IF NOT EXISTS `ballots` (
 	`room` text NOT NULL,
 	`poll` text NOT NULL,
