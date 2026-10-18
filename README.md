@@ -8,7 +8,7 @@
 
 本仓库保存完整游戏源码。上传到 GitHub 不等于游戏已经上线；当前代码仍使用原 Sites 平台提供的登录与 Cloudflare 绑定，不能直接通过 GitHub Pages 运行多人版。
 
-`.github/workflows/check.yml` 会在提交到 `main` 或提出 Pull Request 时安装锁定的依赖，运行 TypeScript 检查、现有多人集成测试和生产构建。此工作流只验证源码，不会发布网站，也不需要 Cloudflare 密钥。
+`.github/workflows/check.yml` 会在提交到 `main` 或提出 Pull Request 时安装锁定的依赖，运行 TypeScript 检查、现有多人集成测试、生产构建及 30 人本地 Worker HTTP 测试。此工作流只验证源码，不会发布网站，也不需要 Cloudflare 密钥。
 
 独立部署建议使用 GitHub 保存代码、Cloudflare Workers 运行网页与接口，并完成以下配置：
 
@@ -70,12 +70,13 @@
 - `lib/engine.ts`：服务端房间权限、投票约束与结果统计。
 - `db/schema.ts`、`drizzle/`：数据结构与数据库迁移。
 - `tests/multiplayer.mjs`：独立玩家与共享存储集成测试。
+- `tests/classroom.mjs`：一名主持人与 30 位玩家的本地 Worker HTTP 测试，使用独立的本地 D1 数据，不连接线上房间。
 
 ## 技术与运行
 
 React / TypeScript / Vinext，Cloudflare Workers 服务端，D1 保存房间与投票，R2 保存图片。浏览器每 2.5 秒获取房间状态，短暂断线后自动重试；后台页面可能被浏览器降低刷新频率。共享数据来自服务器，本地存储只保存参与身份。
 
-当前每个房间最多 100 个参与身份；这是程序限制，不代表已做百人真机负载测试。已验证两名独立玩家的完整流程。昵称参与采用浏览器身份，不能保证一个自然人只创建一个身份；适合课堂讨论，不适合作为严格身份认证的考试或正式选举。
+当前使用目标是一名主持人与约 30 位参与者。程序允许每个房间最多 100 个参与身份，主持人不占投票人数；100 是程序限制，不代表已做百人真机负载测试。昵称参与采用浏览器身份，不能保证一个自然人只创建一个身份；适合课堂讨论，不适合作为严格身份认证的考试或正式选举。
 
 开发需要 Node.js >= 22.13。保留锁文件，用项目所配置的包管理器安装依赖。常用命令：
 
@@ -85,7 +86,10 @@ npm run db:generate
 npm run build
 node node_modules/typescript/bin/tsc --noEmit
 node tests/multiplayer.mjs
+pnpm run test:classroom
 ```
+
+`test:classroom` 需要先完成 `pnpm run build`。它会启动仅监听本机的 Worker，模拟 30 个独立玩家并发加入、按 2.5 秒间隔获取状态、完成四轮投票、重复提交、改票、截止后拒投及导出校验。测试数据保存在已忽略的 `.sites-runtime/classroom-*` 目录，测试结束后关闭测试服务。它验证本地生产构建的 HTTP 行为，不替代线上网络或 30 台真实手机的联测。
 
 项目通过 Sites 管理源代码与发布；`.openai/hosting.json` 记录站点和 D1/R2 绑定。开发、构建与发布应遵循 Sites 工作流。独立本地运行时，先构建生成 Worker 配置，再按顺序应用未执行的 D1 迁移：
 
@@ -98,5 +102,7 @@ node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1
 ## 已检查与待验证
 
 集成测试覆盖：两位独立参与者、同时投票、改票不增票、隐藏投票中统计、平票、零票、票数较多分支、截止后拒投、主持人版本冲突、刷新恢复、跨房间权限、四轮完整流程、导出权限、图片格式校验、共享图片与不同拥有者的素材隔离。
+
+已通过 30 位独立玩家加一名主持人的本地 Worker HTTP 测试：四轮共 120 张最终有效票，1,078 次 API 请求，覆盖同步轮询、并发投票、重复请求、改票、结果一致性、截止后拒投和完整导出。TypeScript 检查、原多人集成测试和生产构建也已通过。
 
 本次环境未提供支持的浏览器测试入口，尚未做手机、投影屏幕和真实多设备端到端联测。正式活动前建议用主持人与两部手机走完一轮，并确认所有人的网络都能访问站点。

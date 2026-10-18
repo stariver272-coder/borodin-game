@@ -1,0 +1,42 @@
+name: Check game
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: "true"
+      CLOUDFLARE_CF_FETCH_ENABLED: "false"
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Install package manager
+        run: npm install --global pnpm@11.25.0
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check TypeScript
+        run: node node_modules/typescript/bin/tsc --noEmit
+      - name: Check multiplayer behavior
+        run: node tests/multiplayer.mjs
+      - name: Build production application
+        run: pnpm run build
+      - name: Check 30-player classroom through local Worker
+        run: pnpm run test:classroom

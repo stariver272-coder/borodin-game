@@ -1,0 +1,58 @@
+[
+  {
+    "id": "borodin",
+    "name": "鲍罗廷",
+    "description": "听取意见，作出抉择",
+    "monogram": "鲍",
+    "color": "#345c52",
+    "image": ""
+  },
+  {
+    "id": "secretary_c",
+    "name": "秘书C",
+    "description": "参与宣言讨论",
+    "monogram": "C",
+    "color": "#875846",
+    "image": ""
+  },
+  {
+    "id": "secretary_h",
+    "name": "秘书H",
+    "description": "由参与者共同提出建议",
+    "monogram": "H",
+    "color": "#496574",
+    "image": ""
+  },
+  {
+    "id": "liaison",
+    "name": "联络代表",
+    "description": "转达合作条件",
+    "monogram": "联",
+    "color": "#766142",
+    "image": ""
+  },
+  {
+    "id": "farmer",
+    "name": "农民代表",
+    "description": "提出农会的诉求",
+    "monogram": "农",
+    "color": "#5f714c",
+    "image": ""
+  },
+  {
+    "id": "landlord_zhou",
+    "name": "地主周某",
+    "description": "周家田产的所有者",
+    "monogram": "周",
+    "color": "#76565e",
+    "image": ""
+  },
+  {
+    "id": "military_liaison",
+    "name": "军方联络员",
+    "description": "转达军方的要求",
+    "monogram": "军",
+    "color": "#5c6064",
+    "image": ""
+  }
+]
