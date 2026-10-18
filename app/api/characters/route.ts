@@ -2,13 +2,13 @@ import {env} from "cloudflare:workers";
 import {characters} from "@/lib/story";
 import {GameError} from "@/lib/engine";
 import {database,json,failure,sameSite} from "@/lib/http";
+import {requireHost} from "@/lib/host-auth";
 export const dynamic="force-dynamic";
-function owner(req:Request){const id=req.headers.get("oai-authenticated-user-id");if(!id)throw new GameError("请先登录后管理人物素材。",401);return id;}
 async function list(id:string){const r=await database().prepare("SELECT character,object_key FROM portraits WHERE owner=?").bind(id).all<{character:string;object_key:string}>();return Object.fromEntries(r.results.map(v=>[v.character,"/api/images/"+v.object_key]));}
-export async function GET(req:Request){try{return json(await list(owner(req)));}catch(e){return failure(e);}}
+export async function GET(req:Request){try{return json(await list(await requireHost(req)));}catch(e){return failure(e);}}
 export async function POST(req:Request){
  try{
-  sameSite(req);const user=owner(req);if(!env.BUCKET)throw new GameError("图片服务尚未就绪。",503);
+  sameSite(req);const user=await requireHost(req);if(!env.BUCKET)throw new GameError("图片服务尚未就绪。",503);
   if(Number(req.headers.get("content-length"))>5*1024*1024+20000)throw new GameError("图片请控制在 5MB 以内。");
   const form=await req.formData(),character=String(form.get("character")??""),file=form.get("file");
   if(!characters.some(c=>c.id===character))throw new GameError("未找到这个人物。");
@@ -25,7 +25,7 @@ export async function POST(req:Request){
  }catch(e){return failure(e);}
 }
 export async function DELETE(req:Request){try{
- sameSite(req);const user=owner(req),character=new URL(req.url).searchParams.get("character")??"",db=database();
+ sameSite(req);const user=await requireHost(req),character=new URL(req.url).searchParams.get("character")??"",db=database();
  const old=await db.prepare("SELECT object_key FROM portraits WHERE owner=? AND character=?").bind(user,character).first<{object_key:string}>();
  await db.prepare("DELETE FROM portraits WHERE owner=? AND character=?").bind(user,character).run();
  if(old&&env.BUCKET)await env.BUCKET.delete(old.object_key);

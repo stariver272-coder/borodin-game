@@ -13,24 +13,27 @@ const { d1, r2 } = hostingConfig;
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const managedLinux = readExecutionProfile() === "managed-linux";
+const standalone = process.env.BORODIN_DEPLOY_TARGET === "cloudflare";
+const uploadBucket = standalone ? process.env.BORODIN_R2_BUCKET : "site-creator-r2";
 
 const localBindingConfig = {
+  name: standalone ? "borodin-game" : "site-creator-vinext-starter",
   main: "./build/sites-worker.ts",
-  compatibility_flags: ["nodejs_compat"],
+  vars: { AUTH_MODE: managedLinux && !standalone ? "sites" : "password" },
   d1_databases: d1
     ? [
         {
           binding: d1,
-          database_name: "site-creator-d1",
-          database_id: SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
+          database_name: standalone ? (process.env.BORODIN_D1_DATABASE_NAME || "borodin-game-db") : "site-creator-d1",
+          database_id: standalone ? (process.env.BORODIN_D1_DATABASE_ID || SITE_CREATOR_PLACEHOLDER_DATABASE_ID) : SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
         },
       ]
     : [],
-  r2_buckets: r2
+  r2_buckets: r2 && uploadBucket
     ? [
         {
           binding: r2,
-          bucket_name: "site-creator-r2",
+          bucket_name: uploadBucket,
         },
       ]
     : [],

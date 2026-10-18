@@ -37,6 +37,8 @@ jobs:
       - name: Check multiplayer behavior
         run: node tests/multiplayer.mjs
       - name: Build production application
+        env:
+          BORODIN_DEPLOY_TARGET: cloudflare
         run: pnpm run build
       - name: Check 30-player classroom through local Worker
         run: pnpm run test:classroom

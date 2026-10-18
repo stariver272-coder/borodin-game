@@ -11,8 +11,8 @@ sqlite.exec('PRAGMA foreign_keys=ON');
 for(const name of readdirSync('drizzle').filter(n=>n.endsWith('.sql')).sort())sqlite.exec(readFileSync('drizzle/'+name,'utf8'));
 class Prepared{constructor(sql,args=[]){this.sql=sql;this.args=args;}bind(...args){return new Prepared(this.sql,args);}async first(){return sqlite.prepare(this.sql).get(...this.args)||null;}async all(){return {results:sqlite.prepare(this.sql).all(...this.args)};}async run(){const r=sqlite.prepare(this.sql).run(...this.args);return {success:true,meta:{changes:Number(r.changes)}};}}
 const objects=new Map();
-globalThis.__testEnv={DB:{prepare(sql){return new Prepared(sql);}},BUCKET:{async put(key,bytes,options){objects.set(key,{bytes,options});},async delete(key){objects.delete(key);},async get(key){const o=objects.get(key);return o?{body:o.bytes,writeHttpMetadata(h){h.set('Content-Type',o.options.httpMetadata.contentType);}}:null;}}};
-const {roomApi,charactersApi,imageApi}=await import('../.sites-runtime/test-api.mjs');
+globalThis.__testEnv={AUTH_MODE:'sites',DB:{prepare(sql){return new Prepared(sql);}},BUCKET:{async put(key,bytes,options){objects.set(key,{bytes,options});},async delete(key){objects.delete(key);},async get(key){const o=objects.get(key);return o?{body:o.bytes,writeHttpMetadata(h){h.set('Content-Type',o.options.httpMetadata.contentType);}}:null;}}};
+const {roomApi,charactersApi,imageApi,hostApi}=await import('../.sites-runtime/test-api.mjs');
 async function post(body,token='',owner=''){return roomApi.POST(new Request('https://example.test/api/room',{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...(owner?{'oai-authenticated-user-id':owner}:{})},body:JSON.stringify(body)}));}
 async function call(body,token='',owner=''){const r=await post(body,token,owner),d=await r.json();assert.equal(r.status,200,JSON.stringify(d));return d;}
 async function state(s){const r=await roomApi.GET(new Request('https://example.test/api/room?code='+s.code,{headers:{Authorization:'Bearer '+s.token}}));assert.equal(r.status,200);return r.json();}
@@ -51,4 +51,33 @@ const key=urls.borodin.split('/').at(-1);const image=await imageApi.GET(new Requ
 await charactersApi.DELETE(ownerRequest('https://example.test/api/characters?character=borodin',{method:'DELETE'},'owner-B'));assert(objects.has(key));
 await charactersApi.DELETE(ownerRequest('https://example.test/api/characters?character=borodin',{method:'DELETE'}));assert(!objects.has(key));assert.equal((await state(a)).portraits.borodin,undefined);
 console.log('PASS: 2 independent players, concurrent votes, vote replacement, hidden live totals, ties, majority branch, empty round, closed-vote rejection, stale host controls, identity recovery, cross-room protection, full 15-scene / 4-poll lifecycle, export authorization, image validation, shared images and owner isolation.');
+// Independent Cloudflare authentication must ignore client-supplied Sites headers.
+globalThis.__testEnv.AUTH_MODE='password';
+const password=crypto.randomUUID()+crypto.randomUUID();
+function login(value,extraHeaders={}){return hostApi.POST(new Request('https://example.test/api/host/session',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://example.test','CF-Connecting-IP':'192.0.2.10',...extraHeaders},body:JSON.stringify({password:value})}));}
+assert.equal((await post({action:'create'},'','spoofed-owner')).status,401);
+assert.equal((await charactersApi.GET(ownerRequest('https://example.test/api/characters'))).status,401);
+assert.equal((await login(password)).status,503);
+globalThis.__testEnv.HOST_PASSWORD=password;
+assert.equal((await login(password,{Origin:'https://evil.test'})).status,403);
+assert.equal((await login(password,{Origin:''})).status,403);
+assert.equal((await login('wrong')).status,401);
+async function validLogin(){const response=await login(password);assert.equal(response.status,200);const header=response.headers.get('set-cookie');assert.match(header,/HttpOnly/);assert.match(header,/Secure/);assert.match(header,/SameSite=Lax/);return header.split(';')[0];}
+const cookie=await validLogin();
+async function createWithCookie(value){return roomApi.POST(new Request('https://example.test/api/room',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://example.test',Cookie:value,'oai-authenticated-user-id':'spoofed-owner'},body:JSON.stringify({action:'create',title:'密码主持人'})}));}
+const signedCreate=await createWithCookie(cookie);assert.equal(signedCreate.status,200);const signedHost=await signedCreate.json();
+assert.equal(sqlite.prepare('SELECT owner FROM rooms WHERE code=?').get(signedHost.code).owner,'standalone-host');
+const token=cookie.split('=')[1];
+assert.equal(sqlite.prepare('SELECT count(*) AS n FROM host_sessions WHERE token_hash=?').get(token).n,0);
+assert.equal((await createWithCookie(cookie.slice(0,-1)+(cookie.endsWith('a')?'b':'a'))).status,401);
+globalThis.__testEnv.HOST_PASSWORD=password+'-rotated';
+assert.equal((await createWithCookie(cookie)).status,401);
+globalThis.__testEnv.HOST_PASSWORD=password;
+const logout=await hostApi.DELETE(new Request('https://example.test/api/host/session',{method:'DELETE',headers:{Origin:'https://example.test',Cookie:cookie}}));
+assert.equal(logout.status,200);assert.match(logout.headers.get('set-cookie'),/Max-Age=0/);assert.equal((await createWithCookie(cookie)).status,401);
+const expiredCookie=await validLogin();sqlite.prepare('UPDATE host_sessions SET expires_at=?').run(Date.now()-1);
+assert.equal((await createWithCookie(expiredCookie)).status,401);
+for(let attempt=0;attempt<10;attempt++)assert.equal((await login('wrong',{'CF-Connecting-IP':'192.0.2.11'})).status,401);
+assert.equal((await login(password,{'CF-Connecting-IP':'192.0.2.11'})).status,429);
+console.log('PASS: password login, spoofed-header rejection, origin checks, session expiry, password rotation, logout and persistent login rate limiting.');
 sqlite.close();

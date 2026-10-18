@@ -1,0 +1,10 @@
+.host-login-page{min-height:100dvh;display:grid;place-items:center;padding:24px;background:var(--bg,#102d23)}
+.host-login-card{width:min(100%,460px);padding:32px;background:var(--paper,#f0efdc);color:#315039;border-radius:6px;border:1px solid #adb598}
+.host-login-card h1{font-family:var(--serif,serif);font-weight:500;font-size:32px;margin:14px 0}
+.host-login-card>p{line-height:1.8;font-size:14px}
+.host-login-form{display:grid;gap:12px;margin:26px 0}
+.host-login-form label{font-size:14px}
+.host-login-form input{width:100%;min-height:46px;padding:10px 12px;border:1px solid #98a28d;border-radius:3px;background:#fffef7;color:#203e2c;font-size:16px}
+.host-login-form input:focus{outline:2px solid #a78f57;outline-offset:2px}
+.host-login-form .button{width:100%;margin-top:8px}
+.host-login-back{font-size:13px;text-decoration:underline;text-underline-offset:4px}

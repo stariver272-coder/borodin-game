@@ -14,7 +14,8 @@
 主持人和玩家都打开同一个网址，主持人创建房间，玩家输入昵称和房间码加入。
 大家不需要同一个 Wi-Fi，可以分别使用家中宽带、学校网络或手机流量。
 前提：都能访问这个网址，并具有网站访问权限。网站访问权限和房间码是两个层次。
-当前版本最初以私密预览发布；邀请他人前请在网站共享设置中确认权限。
+原 Sites 版本最初以私密预览发布；邀请他人前请在网站共享设置中确认权限。
+自己的 Cloudflare 版本使用独立网址和主持人密码；新部署步骤以仓库 README.md 为准。
 网上的服务器负责同步，主持人的电脑不需要充当服务器。
 
 方案 B：让主持人电脑提供局域网服务
@@ -38,13 +39,16 @@ Node.js 最低版本见 package.json（当前为 >=22.13）；包管理器版本
 
    pnpm install --frozen-lockfile
 
-2. 构建，生成本地 Worker 配置：
+2. 在项目根目录创建 .dev.vars，填写 HOST_PASSWORD=自己设置的至少16位密码。
+   此文件不要上传 GitHub。然后构建，生成本地 Worker 配置：
 
    pnpm run build
 
 3. 首次使用该本地数据库时，执行初始迁移（整行命令）：
 
    node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_watery_wallow.sql
+
+   node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_host_auth.sql
 
    不要对已经执行过此迁移的本地数据库重复执行。数据库和上传图片保存在本地运行目录，和线上数据相互独立。
 
@@ -54,8 +58,8 @@ Node.js 最低版本见 package.json（当前为 >=22.13）；包管理器版本
 
    默认端口是 5173；如果终端显示其他端口，以下地址也要使用那个端口。
 
-5. 主持人从本机浏览器访问 http://localhost:5173/ ，点击登录入口后创建房间。
-   模板只在本机开发请求上提供模拟登录，不是线上 ChatGPT 账号登录。
+5. 主持人从本机浏览器访问 http://localhost:5173/ ，点击登录入口，输入 .dev.vars 中的主持人密码后创建房间。
+   玩家只需昵称和房间码，不需要主持人密码。
    主持人仍使用 localhost 页面控制房间；玩家可在局域网地址上使用昵称加入。
 
 6. Windows 终端可执行 ipconfig，查看当前 Wi-Fi/网络连接的 IPv4 地址。
@@ -85,8 +89,9 @@ ZIP 不含线上房间记录或用户已经上传的图片；这些是服务器�
 四、迁移到其他网上平台
 
 本项目有服务器、数据库和图片存储，不能只把页面文件上传到纯静态托管就实现多人投票。
-现有线上版本由 Sites 管理登录、Cloudflare Workers、D1 数据库和 R2 图片存储。
-部署到你自己的环境时，需要配置这些服务，并适配主持人的登录认证。
+原线上版本由 Sites 管理登录、Cloudflare Workers、D1 数据库和 R2 图片存储。
+仓库已提供独立 Cloudflare 部署和主持人密码登录；按 README.md 创建 D1、初始化六张表并配置 Worker 即可。
+R2 是可选项；未配置 R2 时使用内置人物图或姓名占位，30 人同步投票仍可完整使用。
 复制项目后，不会自动获得原网站的数据库、上传图片或登录配置。
 
 五、这份源码的版本

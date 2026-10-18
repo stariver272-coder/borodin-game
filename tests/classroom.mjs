@@ -1,19 +1,28 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 
 // Exercise the production Worker through HTTP with isolated local D1 storage.
 // No remote URL, account, API token, or existing room is used by this test.
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const config = join(root, 'dist/server/wrangler.json');
-assert(existsSync(config), 'Build the application before running the classroom test.');
+const builtConfig = join(root, 'dist/server/wrangler.json');
+assert(existsSync(builtConfig), 'Build the application before running the classroom test.');
 mkdirSync(join(root, '.sites-runtime'), { recursive: true });
 const runtime = mkdtempSync(join(root, '.sites-runtime/classroom-'));
+const config = join(runtime, 'wrangler.json');
+const testPassword = crypto.randomUUID() + crypto.randomUUID();
+const settings = JSON.parse(readFileSync(builtConfig, 'utf8'));
+assert.equal(settings.vars?.AUTH_MODE, 'password', 'The local classroom test requires the independent password-authenticated build.');
+settings.main = resolve(dirname(builtConfig), settings.main);
+if (settings.assets?.directory) settings.assets.directory = resolve(dirname(builtConfig), settings.assets.directory);
+// This random credential is for this disposable local test only.
+settings.vars = { ...settings.vars, HOST_PASSWORD: testPassword };
+writeFileSync(config, JSON.stringify(settings));
 const persistence = join(runtime, 'state');
 const cli = ['--import', pathToFileURL(join(root, 'scripts/sites-env.mjs')).href, join(root, 'node_modules/wrangler/bin/wrangler.js')];
 const env = {
@@ -54,6 +63,7 @@ worker.on('error', error => { workerError = error; });
 worker.stdout.on('data', chunk => { workerLog = (workerLog + chunk).slice(-20000); });
 worker.stderr.on('data', chunk => { workerLog = (workerLog + chunk).slice(-20000); });
 const latencies = [];
+let hostCookie = '';
 
 async function request(path, init = {}, expected = 200) {
   const start = performance.now();
@@ -63,13 +73,13 @@ async function request(path, init = {}, expected = 200) {
   assert.equal(response.status, expected, JSON.stringify(body));
   return body;
 }
-function action(body, session, expected = 200, owner = '') {
+function action(body, session, expected = 200) {
   return request('/api/room', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(session ? { Authorization: `Bearer ${session.token}` } : {}),
-      ...(owner ? { 'oai-authenticated-user-id': owner } : {}),
+      ...(body.action === 'create' || session?.role === 'host' ? { Cookie: hostCookie } : {}),
     },
     body: JSON.stringify({ ...(session ? { code: session.code } : {}), ...body }),
   }, expected);
@@ -96,7 +106,14 @@ try {
   assert.equal(homepage.status, 200);
   assert.match(await homepage.text(), /鲍罗廷/);
 
-  const host = await action({ action: 'create', title: '30 人课堂验证' }, null, 200, 'classroom-test-owner');
+  const loginPage = await fetch(base + '/host/login');
+  assert.equal(loginPage.status, 200);assert.match(await loginPage.text(), /主持人登录/);
+  await request('/api/room', {method:'POST',headers:{'Content-Type':'application/json','oai-authenticated-user-id':'spoofed-owner'},body:JSON.stringify({action:'create'})}, 401);
+  const login = await fetch(base + '/api/host/session', {method:'POST',headers:{'Content-Type':'application/json',Origin:base},body:JSON.stringify({password:testPassword})});
+  assert.equal(login.status, 200);hostCookie=login.headers.get('set-cookie').split(';')[0];
+  const signedHomepage=await fetch(base,{headers:{Cookie:hostCookie}});assert.equal(signedHomepage.status,200);
+  assert.doesNotMatch(await signedHomepage.text(), /href="\/host\/login"/);
+  const host = await action({ action: 'create', title: '30 人课堂验证' }, null);
   const players = await Promise.all(Array.from({ length: 30 }, (_, index) =>
     action({ action: 'join', code: host.code, name: `同学${index + 1}` })));
   assert.equal(new Set(players.map(player => player.token)).size, 30);

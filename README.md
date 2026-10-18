@@ -6,16 +6,30 @@
 
 源码仓库：https://github.com/the1valid/borodin-game
 
-本仓库保存完整游戏源码。上传到 GitHub 不等于游戏已经上线；当前代码仍使用原 Sites 平台提供的登录与 Cloudflare 绑定，不能直接通过 GitHub Pages 运行多人版。
+本仓库保存完整游戏源码，并提供独立 Cloudflare 部署配置与主持人密码登录。上传到 GitHub 不等于游戏已经上线；多人版仍需要 Workers 服务和 D1 数据库，不能直接通过 GitHub Pages 运行。
 
 `.github/workflows/check.yml` 会在提交到 `main` 或提出 Pull Request 时安装锁定的依赖，运行 TypeScript 检查、现有多人集成测试、生产构建及 30 人本地 Worker HTTP 测试。此工作流只验证源码，不会发布网站，也不需要 Cloudflare 密钥。
 
-独立部署建议使用 GitHub 保存代码、Cloudflare Workers 运行网页与接口，并完成以下配置：
+## 在自己的 Cloudflare 账号部署
 
-1. 在自己的 Cloudflare 账号创建 D1 数据库和 R2 存储桶，分别绑定为 `DB` 和 `BUCKET`。将 `vite.config.ts` 中的占位数据库 ID、数据库名和存储桶名替换为真实配置，并设置自己的 Worker 名称。
-2. 将原 Sites 主持人登录改为自己的认证机制，同时适配 `app/page.tsx`、`app/api/room/route.ts` 和 `app/api/characters/route.ts`。当前接口信任 Sites 网关注入的 `oai-authenticated-user-*` 请求头；独立公开部署时必须验证真实会话，不能直接信任浏览器提交的同名请求头。
-3. 对新建的远程数据库执行 `drizzle/0000_watery_wallow.sql` 初始化迁移。项目里的 `--local` 命令只影响本机模拟数据库，不会初始化线上数据库；对已有数据库只应用尚未执行的迁移。
-4. 通过 Cloudflare Workers 的 GitHub 集成或 GitHub Actions 配置生产构建和发布，并在上线后验证主持人创建房间、两台设备加入、同步投票及图片上传。
+1. 在 **Storage & databases → D1 SQL database** 创建 `borodin-game-db`，复制它的 **Database ID**。这个值不是 Account ID 或 API Token；代码中不预填未经确认的资源 ID。
+2. 打开新数据库的 **Console**，依次粘贴并执行 `drizzle/0000_watery_wallow.sql` 和 `drizzle/0001_host_auth.sql`。完成后有六张表：`rooms`、`players`、`ballots`、`portraits`、`host_sessions`、`host_login_limits`。已经执行过的文件不要重放；若已有原来的四张表，只执行 `0001_host_auth.sql`。
+3. 在 **Workers & Pages → Create application → GitHub** 选择 `the1valid/borodin-game`，Worker 名称填 **borodin-game**，分支选 `main`，项目目录用仓库根目录。
+4. 构建命令填 **`pnpm run build:cloudflare`**，部署命令填 **`pnpm run deploy:cloudflare`**。在构建环境变量中添加下表中的必需设置，然后保存并部署。缺少真实数据库 ID 时构建会明确报错，普通本地构建不能通过正式部署脚本发布。
+5. 打开 Worker 的 **Settings → Variables and Secrets → Add**，类型选 **Secret**，名称填 **HOST_PASSWORD**，值填自己生成的至少 16 位随机密码，保存并部署。这个是运行时密钥，不是构建变量；不用发给别人，也不要提交到 GitHub。未设置密码时，主持人登录保持关闭。
+6. 打开部署得到的 HTTPS 网址，点击“登录并创建房间”，用主持人密码登录。玩家使用昵称和房间码加入，不需要密码。先用主持人和两部手机验证一轮，再组织正式活动。
+
+| 构建变量 | 值 | 必需 |
+| --- | --- | --- |
+| `NODE_VERSION` | `22` | 建议设置 |
+| `PNPM_VERSION` | `11.25.0` | 是 |
+| `BORODIN_D1_DATABASE_ID` | 自己已创建的 D1 Database ID | 是 |
+| `BORODIN_D1_DATABASE_NAME` | 默认 `borodin-game-db`；名称不同时填写实际名称 | 否 |
+| `BORODIN_R2_BUCKET` | 已创建的 R2 存储桶名称，例如 `borodin-game-images` | 否 |
+
+**可以先不开通 R2。** 不填写 `BORODIN_R2_BUCKET` 时，独立部署不会创建 R2 绑定，页面使用项目内人物图片或姓名占位，并隐藏上传入口；多人投票完整保留。以后需要网页上传图片，再创建私有 R2 桶、填写这个构建变量并重新部署。数据库绑定名 `DB` 和图片绑定名 `BUCKET` 由构建配置生成，无需申请 S3 密钥。
+
+独立模式使用一个主持人管理账号，12 小时登录会话保存在 D1，浏览器只保存 HttpOnly Cookie。更改 `HOST_PASSWORD` 会使旧登录会话失效；同一来源 IP 每 15 分钟最多尝试登录 10 次。建房和素材管理只接受有效会话，不信任浏览器提交的 Sites 身份请求头。房间主持密钥与登录会话是不同凭据：退出登录会清除当前浏览器保存的主持身份，但不会撤销其他设备已持有的房间密钥，不要分享这些密钥。
 
 项目根目录应直接包含 `package.json`、`pnpm-lock.yaml`、`app/` 和 `content/`。Node.js 需要 >= 22.13.0，包管理器版本以 `package.json` 的 `packageManager` 为准；首次安装使用 `pnpm install --frozen-lockfile`。
 
@@ -34,11 +48,11 @@
 
 主持人不计票。如需独自体验，用侧栏“打开玩家页试投票”另开一个标签页，作为参与者加入。不要分享主持人的浏览器存储或密钥。
 
-**访问权限与房间码是两个层次。** 本项目初次发布为私密预览。邀请别人之前，需要在站点的共享设置中授权参与者访问；房间码不会绕过网站访问权限。发布为公开访问时，玩家可以使用昵称加入，创建房间和上传素材仍须登录。当前代码没有自行开放网站的公开访问权限。
+独立 Cloudflare 版本的参与者可以访问游戏网址并使用昵称加入；创建房间和上传素材需要主持人登录。原 Sites 站点的访问权限与房间码仍是两个层次：分享原 Sites 网址时，还需在该站点的共享设置中授权参与者。
 
 ## 添加人物图片
 
-直接点击网页右上角“人物素材”上传。支持 PNG / JPG / WebP，单张不超过 5MB，推荐 3:4 竖图。上传由服务器保存，同一主持人创建的房间共享这组素材；其他主持人的素材彼此独立。删除图片会恢复默认图片或姓名占位。
+配置 R2 后，直接点击网页右上角“人物素材”上传。支持 PNG / JPG / WebP，单张不超过 5MB，推荐 3:4 竖图。上传由服务器保存，同一主持人创建的房间共享这组素材；Sites 模式下不同拥有者的素材彼此独立。删除图片会恢复默认图片或姓名占位。
 
 也可以编辑项目：
 
@@ -68,6 +82,7 @@
 - `app/api/characters/route.ts`：人物图片上传与管理。
 - `app/api/images/[key]/route.ts`：读取上传图片。
 - `lib/engine.ts`：服务端房间权限、投票约束与结果统计。
+- `lib/host-auth.ts`、`app/host/login/`：独立主持人登录、会话与限流。
 - `db/schema.ts`、`drizzle/`：数据结构与数据库迁移。
 - `tests/multiplayer.mjs`：独立玩家与共享存储集成测试。
 - `tests/classroom.mjs`：一名主持人与 30 位玩家的本地 Worker HTTP 测试，使用独立的本地 D1 数据，不连接线上房间。
@@ -91,18 +106,21 @@ pnpm run test:classroom
 
 `test:classroom` 需要先完成 `pnpm run build`。它会启动仅监听本机的 Worker，模拟 30 个独立玩家并发加入、按 2.5 秒间隔获取状态、完成四轮投票、重复提交、改票、截止后拒投及导出校验。测试数据保存在已忽略的 `.sites-runtime/classroom-*` 目录，测试结束后关闭测试服务。它验证本地生产构建的 HTTP 行为，不替代线上网络或 30 台真实手机的联测。
 
-项目通过 Sites 管理源代码与发布；`.openai/hosting.json` 记录站点和 D1/R2 绑定。开发、构建与发布应遵循 Sites 工作流。独立本地运行时，先构建生成 Worker 配置，再按顺序应用未执行的 D1 迁移：
+`.openai/hosting.json` 保留原 Sites 项目信息；托管 Sites 构建仍可使用其认证，独立部署默认使用密码认证。独立本地运行时，在项目根目录创建未跟踪的 `.dev.vars`，填写 `HOST_PASSWORD=自己设置的至少16位密码`。先构建生成 Worker 配置，再按顺序应用未执行的 D1 迁移：
 
 ```sh
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_watery_wallow.sql
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_host_auth.sql
 ```
 
 本地数据与线上数据彼此独立。不要重放已执行的迁移；不要提交运行时数据、密钥、用户图片或浏览器存储。
+
+本地开发用 `pnpm run dev`，主持人在 `/host/login` 输入 `.dev.vars` 中设置的密码。`.dev.vars` 是本地文件，线上密码仍须设置在 Cloudflare Worker 的运行时 Secret 中。
 
 ## 已检查与待验证
 
 集成测试覆盖：两位独立参与者、同时投票、改票不增票、隐藏投票中统计、平票、零票、票数较多分支、截止后拒投、主持人版本冲突、刷新恢复、跨房间权限、四轮完整流程、导出权限、图片格式校验、共享图片与不同拥有者的素材隔离。
 
-已通过 30 位独立玩家加一名主持人的本地 Worker HTTP 测试：四轮共 120 张最终有效票，1,078 次 API 请求，覆盖同步轮询、并发投票、重复请求、改票、结果一致性、截止后拒投和完整导出。TypeScript 检查、原多人集成测试和生产构建也已通过。
+30 位独立玩家加一名主持人的本地 Worker HTTP 测试覆盖四轮共 120 张最终有效票、同步轮询、并发投票、重复请求、改票、结果一致性、截止后拒投和完整导出。测试同时走真实密码登录接口；认证集成测试另覆盖伪造身份头、跨来源请求、错误密码、会话过期、密码轮换、退出登录及限流。最新检查结果见 GitHub Actions。
 
 本次环境未提供支持的浏览器测试入口，尚未做手机、投影屏幕和真实多设备端到端联测。正式活动前建议用主持人与两部手机走完一轮，并确认所有人的网络都能访问站点。

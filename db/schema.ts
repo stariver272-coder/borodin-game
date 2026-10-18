@@ -15,3 +15,10 @@ export const ballots = sqliteTable("ballots", {
 export const portraits = sqliteTable("portraits", {
   owner: text("owner").notNull(), character: text("character").notNull(), objectKey: text("object_key").notNull(),
 }, t => [primaryKey({columns: [t.owner, t.character]})]);
+export const hostSessions = sqliteTable("host_sessions", {
+  tokenHash: text("token_hash").primaryKey(), owner: text("owner").notNull(),
+  expiresAt: integer("expires_at").notNull(), passwordVersion: text("password_version").notNull(),
+}, t => [index("host_sessions_expiry_idx").on(t.expiresAt)]);
+export const hostLoginLimits = sqliteTable("host_login_limits", {
+  ipHash: text("ip_hash").primaryKey(), windowStart: integer("window_start").notNull(), attempts: integer("attempts").notNull(),
+}, t => [index("host_login_limits_window_idx").on(t.windowStart)]);
