@@ -13,7 +13,7 @@ const bucket = process.env.BORODIN_R2_BUCKET;
 if (bucket && !/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(bucket)) {
   throw new Error('BORODIN_R2_BUCKET must be an existing R2 bucket name. Leave it unset to use built-in character images.');
 }
-const result = spawnSync(process.execPath, [fileURLToPath(new URL('./build.mjs', import.meta.url))], {
+const result = spawnSync(process.execPath, [fileURLToPath(new URL('./run-framework.mjs', import.meta.url)), 'build'], {
   cwd: fileURLToPath(new URL('../', import.meta.url)),
   env: { ...process.env, BORODIN_DEPLOY_TARGET: 'cloudflare', BORODIN_D1_DATABASE_ID: databaseId },
   stdio: 'inherit', windowsHide: true,

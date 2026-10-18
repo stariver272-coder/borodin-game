@@ -1,4 +1,4 @@
-import {createRoom,joinRoom,roomState,controlRoom,castVote,exportResults,leaveRoom,GameError} from "@/lib/engine";
+import {createRoom,joinRoom,roomState,controlRoom,castVote,exportResults,GameError} from "@/lib/engine";
 import {database,bearer,json,failure,sameSite} from "@/lib/http";
 import {requireHost} from "@/lib/host-auth";
 export const dynamic="force-dynamic";
@@ -11,8 +11,6 @@ export async function POST(request:Request) {
     const db=database(),token=bearer(request),code=String(body.code??"");
     if(body.action==="create")return json(await createRoom(db,await requireHost(request),String(body.title??"")));
     if(body.action==="join")return json(await joinRoom(db,code,String(body.name??"")));
-    if(body.action==="heartbeat")return json(await roomState(db,code,token,String(body.presenceId??"")));
-    if(body.action==="leave"){await leaveRoom(db,code,token,String(body.presenceId??""));return json({ok:true});}
     if(body.action==="control")await controlRoom(db,code,token,String(body.command),Number(body.version));
     else if(body.action==="vote")await castVote(db,code,token,String(body.poll),String(body.choice),String(body.reason??""));
     else if(body.action==="export")return json(await exportResults(db,code,token));

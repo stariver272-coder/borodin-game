@@ -1,6 +1,5 @@
 import {DatabaseSync} from 'node:sqlite';
 import assert from 'node:assert/strict';
-import {mock} from 'node:test';
 import {readFileSync,readdirSync,mkdirSync} from 'node:fs';
 import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
@@ -13,14 +12,12 @@ for(const name of readdirSync('drizzle').filter(n=>n.endsWith('.sql')).sort())sq
 class Prepared{constructor(sql,args=[]){this.sql=sql;this.args=args;}bind(...args){return new Prepared(this.sql,args);}async first(){return sqlite.prepare(this.sql).get(...this.args)||null;}async all(){return {results:sqlite.prepare(this.sql).all(...this.args)};}async run(){const r=sqlite.prepare(this.sql).run(...this.args);return {success:true,meta:{changes:Number(r.changes)}};}}
 const objects=new Map();
 globalThis.__testEnv={AUTH_MODE:'sites',DB:{prepare(sql){return new Prepared(sql);}},BUCKET:{async put(key,bytes,options){objects.set(key,{bytes,options});},async delete(key){objects.delete(key);},async get(key){const o=objects.get(key);return o?{body:o.bytes,writeHttpMetadata(h){h.set('Content-Type',o.options.httpMetadata.contentType);}}:null;}}};
-const {roomApi,charactersApi,imageApi,hostApi,createRoomSync}=await import('../.sites-runtime/test-api.mjs');
+const {roomApi,charactersApi,imageApi,hostApi}=await import('../.sites-runtime/test-api.mjs');
 async function post(body,token='',owner=''){return roomApi.POST(new Request('https://example.test/api/room',{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...(owner?{'oai-authenticated-user-id':owner}:{})},body:JSON.stringify(body)}));}
 async function call(body,token='',owner=''){const r=await post(body,token,owner),d=await r.json();assert.equal(r.status,200,JSON.stringify(d));return d;}
 async function state(s){const r=await roomApi.GET(new Request('https://example.test/api/room?code='+s.code,{headers:{Authorization:'Bearer '+s.token}}));assert.equal(r.status,200);return r.json();}
 assert.equal((await post({action:'create'})).status,401);
 const host=await call({action:'create',title:'测试房间'},'','owner-A');
-const hostTab=crypto.randomUUID();
-await call({action:'heartbeat',code:host.code,presenceId:hostTab},host.token);
 const a=await call({action:'join',code:host.code,name:'参与者甲'}),b=await call({action:'join',code:host.code,name:'参与者乙'});
 const hostB=await call({action:'create',title:'另一房间'},'','owner-B');
 assert.equal((await post({action:'control',code:host.code,command:'start',version:0},a.token)).status,403);
@@ -83,83 +80,4 @@ assert.equal((await createWithCookie(expiredCookie)).status,401);
 for(let attempt=0;attempt<10;attempt++)assert.equal((await login('wrong',{'CF-Connecting-IP':'192.0.2.11'})).status,401);
 assert.equal((await login(password,{'CF-Connecting-IP':'192.0.2.11'})).status,429);
 console.log('PASS: password login, spoofed-header rejection, origin checks, session expiry, password rotation, logout and persistent login rate limiting.');
-// Host leases are authorized, independently tracked per tab, and expire even
-// when the browser cannot deliver its exit notification.
-globalThis.__testEnv.AUTH_MODE='sites';
-const presenceHost=await call({action:'create',title:'Presence test'},'','presence-owner');
-const presencePlayer=await call({action:'join',code:presenceHost.code,name:'Presence player'});
-const tab1=crypto.randomUUID(),tab2=crypto.randomUUID();
-const beat=id=>call({action:'heartbeat',code:presenceHost.code,presenceId:id},presenceHost.token);
-const leave=id=>call({action:'leave',code:presenceHost.code,presenceId:id},presenceHost.token);
-assert.equal((await state(presencePlayer)).hostOnline,false);
-assert.equal((await post({action:'heartbeat',code:presenceHost.code,presenceId:tab1},presencePlayer.token)).status,403);
-assert.equal((await post({action:'leave',code:presenceHost.code,presenceId:tab1},presencePlayer.token)).status,403);
-assert.equal((await post({action:'heartbeat',code:presenceHost.code,presenceId:tab1},host.token)).status,401);
-assert.equal((await post({action:'heartbeat',code:presenceHost.code,presenceId:'invalid'},presenceHost.token)).status,400);
-await beat(tab1);await beat(tab2);
-const seen=sqlite.prepare('SELECT seen_at FROM room_host_presence WHERE room=? AND session_id=?').get(presenceHost.code,tab1).seen_at;
-await beat(tab1);
-assert.equal(sqlite.prepare('SELECT seen_at FROM room_host_presence WHERE room=? AND session_id=?').get(presenceHost.code,tab1).seen_at,seen);
-await leave(tab1);assert.equal((await state(presencePlayer)).hostOnline,true,'A second host tab keeps the room live.');
-await leave(tab2);assert.equal((await state(presencePlayer)).hostOnline,false);
-await beat(tab1);assert.equal((await state(presencePlayer)).hostOnline,false,'A late heartbeat must not revive a closed tab.');
-const closeFirst=crypto.randomUUID();await leave(closeFirst);await beat(closeFirst);
-assert.equal((await state(presencePlayer)).hostOnline,false,'Exit may arrive before the initial heartbeat.');
-const tab3=crypto.randomUUID();await beat(tab3);
-const realNow=Date.now;
-try{Date.now=()=>realNow()+46000;assert.equal((await state(presencePlayer)).hostOnline,false);}finally{Date.now=realNow;}
-let presenceState=await state(presenceHost);
-for(const command of ['start','next','next','next','open'])presenceState=await call({action:'control',code:presenceHost.code,command,version:presenceState.room.version},presenceHost.token);
-await call({action:'vote',code:presenceHost.code,poll:'identity',choice:'C'},presencePlayer.token);
-await leave(tab3);
-assert.equal((await post({action:'vote',code:presenceHost.code,poll:'identity',choice:'H'},presencePlayer.token)).status,409);
-assert.equal((await state(presencePlayer)).myVote.choice,'C','Pausing preserves the submitted vote.');
-await beat(crypto.randomUUID());
-await call({action:'vote',code:presenceHost.code,poll:'identity',choice:'H'},presencePlayer.token);
-// The additive upgrade is safe to rerun after manual initialization/deployment.
-for(let i=0;i<2;i++)sqlite.exec(readFileSync('drizzle/0002_host_presence.sql','utf8'));
-assert.equal((await state(presencePlayer)).myVote.choice,'H');
-console.log('PASS: host-only presence, multiple host tabs, exit/heartbeat races, lost-exit timeout, paused vote rejection, retained votes and repeatable migration.');
-
-// Drive the actual client polling controller against the API with 30 players.
-// Fake timers advance idle time without waiting ten real minutes.
-mock.timers.enable({apis:['setTimeout']});
-let pending=0,requests=0;
-async function transport(path,options={}){
-  requests++;pending++;
-  try{const request=new Request('https://example.test'+path,options);return await (options.method==='POST'?roomApi.POST(request):roomApi.GET(request));}
-  finally{pending--;}
-}
-async function settled(){do{await new Promise(setImmediate);}while(pending);await new Promise(setImmediate);}
-const syncHost=await call({action:'create',title:'Polling test'},'','sync-owner');
-const syncPlayers=await Promise.all(Array.from({length:30},(_,i)=>call({action:'join',code:syncHost.code,name:'Player '+i})));
-const statuses=new Map(),snapshots=new Map();
-function client(session){return createRoomSync({session,fetcher:transport,onState:s=>snapshots.set(session.token,s),onStatus:s=>statuses.set(session.token,s)});}
-const hostClient=client(syncHost),clients=syncPlayers.map(client);
-try{
-  hostClient.resume();await settled();clients.forEach(c=>c.resume());await settled();
-  assert(syncPlayers.every(s=>statuses.get(s.token)==='live'));
-  mock.timers.tick(2500);await settled();
-  hostClient.stop();await settled();mock.timers.tick(2500);await settled();
-  assert(syncPlayers.every(s=>statuses.get(s.token)==='host-offline'));
-  const pausedRequests=requests;mock.timers.tick(600000);await settled();
-  assert.equal(requests,pausedRequests,'30 paused players must issue zero requests over ten idle minutes.');
-  clients[0].resume();await settled();assert.equal(statuses.get(syncPlayers[0].token),'host-offline');
-  const checkedRequests=requests;mock.timers.tick(60000);await settled();assert.equal(requests,checkedRequests,'Manual resume with no host must pause again.');
-  hostClient.resume();await settled();assert.equal(statuses.get(syncHost.token),'live');
-  clients.forEach(c=>c.resume());await settled();assert(syncPlayers.every(s=>statuses.get(s.token)==='live'));
-  sqlite.prepare("UPDATE rooms SET status='finished',version=version+1 WHERE code=?").run(syncHost.code);
-  mock.timers.tick(2500);await settled();assert([...statuses.values()].every(s=>s==='finished'));
-  const finishedRequests=requests;mock.timers.tick(600000);await settled();assert.equal(requests,finishedRequests);
-  let failedRequests=0,failedStatus;
-  const failed=createRoomSync({session:syncPlayers[0],onState:()=>{},onStatus:s=>{failedStatus=s;},fetcher:async()=>{failedRequests++;throw new Error('offline');}});
-  failed.resume();await settled();for(let i=0;i<2;i++){mock.timers.tick(2500);await settled();}
-  assert.equal(failedStatus,'disconnected');assert.equal(failedRequests,3);
-  mock.timers.tick(600000);await settled();assert.equal(failedRequests,3,'Network failure must not retry forever.');failed.stop();
-  let release,lateRequests=0,lateState=0;
-  const late=createRoomSync({session:syncPlayers[0],onState:()=>lateState++,onStatus:()=>{},fetcher:()=>{lateRequests++;return new Promise(resolve=>{release=resolve;});}});
-  late.resume();late.stop();release(Response.json(snapshots.get(syncPlayers[0].token)));await settled();
-  mock.timers.tick(600000);await settled();assert.equal(lateState,0);assert.equal(lateRequests,1,'An in-flight response after cleanup must not restart polling.');
-}finally{hostClient.stop();clients.forEach(c=>c.stop());await settled();mock.timers.reset();}
-console.log('PASS: 30 real client pollers stop all requests after host exit; ten idle minutes cost zero polling requests; manual resume, finished rooms, bounded retries and in-flight cleanup.');
 sqlite.close();
