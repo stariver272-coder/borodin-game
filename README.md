@@ -12,10 +12,10 @@
 
 ## 在自己的 Cloudflare 账号部署
 
-1. 在 **Storage & databases → D1 SQL database** 创建 `borodin-game-db`，复制它的 **Database ID**。这个值不是 Account ID 或 API Token；代码中不预填未经确认的资源 ID。
-2. 打开新数据库的 **Console**，依次粘贴并执行 `drizzle/0000_watery_wallow.sql` 和 `drizzle/0001_host_auth.sql`。完成后有六张表：`rooms`、`players`、`ballots`、`portraits`、`host_sessions`、`host_login_limits`。已经执行过的文件不要重放；若已有原来的四张表，只执行 `0001_host_auth.sql`。
+1. 当前项目已按用户确认配置 D1 Database ID：`95db5a47-b245-4ffa-a2b3-477408f52a85`，正式构建会自动使用它，无需重复创建数据库或填写 ID。打开 **Storage & databases → D1 SQL database**，选择这个数据库。若部署到另一个 Cloudflare 账号，请创建自己的数据库，并用下表的构建变量覆盖 ID。
+2. 打开新数据库的 **Console**，复制 [deployment/initialize.sql](deployment/initialize.sql) 的全部内容，粘贴后点击 **Execute**。完成后会列出六张表：`rooms`、`players`、`ballots`、`portraits`、`host_sessions`、`host_login_limits`。这份初始化 SQL 只创建不存在的表和索引，不删除已有数据。它用于首次部署；后续升级按顺序执行 `drizzle/` 中尚未应用的迁移，已经执行过的迁移不要重放。若之前已有原来的四张表，本次也可只执行 `drizzle/0001_host_auth.sql`。
 3. 在 **Workers & Pages → Create application → GitHub** 选择 `the1valid/borodin-game`，Worker 名称填 **borodin-game**，分支选 `main`，项目目录用仓库根目录。
-4. 构建命令填 **`pnpm run build:cloudflare`**，部署命令填 **`pnpm run deploy:cloudflare`**。在构建环境变量中添加下表中的必需设置，然后保存并部署。缺少真实数据库 ID 时构建会明确报错，普通本地构建不能通过正式部署脚本发布。
+4. 构建命令填 **`pnpm run build:cloudflare`**，部署命令填 **`pnpm run deploy:cloudflare`**。在构建环境变量中添加下表中的必需设置，然后保存并部署。正式构建使用上面已确认的数据库 ID，普通本地构建仍使用占位 ID，不能通过正式部署脚本发布。
 5. 打开 Worker 的 **Settings → Variables and Secrets → Add**，类型选 **Secret**，名称填 **HOST_PASSWORD**，值填自己生成的至少 16 位随机密码，保存并部署。这个是运行时密钥，不是构建变量；不用发给别人，也不要提交到 GitHub。未设置密码时，主持人登录保持关闭。
 6. 打开部署得到的 HTTPS 网址，点击“登录并创建房间”，用主持人密码登录。玩家使用昵称和房间码加入，不需要密码。先用主持人和两部手机验证一轮，再组织正式活动。
 
@@ -23,7 +23,7 @@
 | --- | --- | --- |
 | `NODE_VERSION` | `22` | 建议设置 |
 | `PNPM_VERSION` | `11.25.0` | 是 |
-| `BORODIN_D1_DATABASE_ID` | 自己已创建的 D1 Database ID | 是 |
+| `BORODIN_D1_DATABASE_ID` | 已默认配置当前项目 ID；使用其他数据库时填写其 Database ID | 否 |
 | `BORODIN_D1_DATABASE_NAME` | 默认 `borodin-game-db`；名称不同时填写实际名称 | 否 |
 | `BORODIN_R2_BUCKET` | 已创建的 R2 存储桶名称，例如 `borodin-game-images` | 否 |
 
