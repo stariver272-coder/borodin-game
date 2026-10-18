@@ -86,7 +86,9 @@ function action(body, session, expected = 200) {
     body: JSON.stringify({ ...(session ? { code: session.code } : {}), ...body }),
   }, expected);
 }
+const hostPresenceId=crypto.randomUUID();
 function state(session) {
+  if(session.role==='host')return action({action:'heartbeat',presenceId:hostPresenceId},session);
   return request('/api/room?code=' + session.code, { headers: { Authorization: `Bearer ${session.token}` } });
 }
 

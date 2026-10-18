@@ -1,5 +1,6 @@
 import { scenes, polls, pollSteps } from "./story";
 import type { RoomState, Result } from "./types";
+import {hostOnline,heartbeat,closePresence,validPresenceId,HOST_TIMEOUT_MS} from "./presence";
 type Room = {code: string; owner: string; host_hash: string; title: string; status: string; step: number; phase: string; version: number; created_at: number};
 type Player = {id: string; room: string; name: string; token_hash: string; last_seen: number};
 type Ballot = {poll: string; player: string; choice: string; reason: string; name: string};
@@ -43,9 +44,21 @@ async function authorize(db:D1Database, room:Room, token:string) {
   if(!player) throw new GameError("参与身份已失效，请重新加入房间。",401);
   return {role:"player" as const, player};
 }
-export async function roomState(db:D1Database, code:string, token:string):Promise<RoomState> {
+export async function leaveRoom(db:D1Database, code:string, token:string, presenceId:string) {
+  const room=await getRoom(db,code),auth=await authorize(db,room,token);
+  if(auth.role!=="host") throw new GameError("只有主持人可以更改主持人在线状态。",403);
+  if(!validPresenceId(presenceId)) throw new GameError("页面身份无效，请刷新后重试。");
+  await closePresence(db,room.code,presenceId);
+}
+export async function roomState(db:D1Database, code:string, token:string, presenceId?:string):Promise<RoomState> {
   const room=await getRoom(db,code), auth=await authorize(db,room,token), now=Date.now();
-  if(auth.player && now-auth.player.last_seen>10000) await db.prepare("UPDATE players SET last_seen=? WHERE id=?").bind(now,auth.player.id).run();
+  if(presenceId!==undefined) {
+    if(auth.role!=="host") throw new GameError("只有主持人可以更改主持人在线状态。",403);
+    if(!validPresenceId(presenceId)) throw new GameError("页面身份无效，请刷新后重试。");
+    if(room.status!=="finished") await heartbeat(db,room.code,presenceId);
+  }
+  const online=room.status!=="finished" && await hostOnline(db,room.code);
+  if(online && auth.player && now-auth.player.last_seen>10000) await db.prepare("UPDATE players SET last_seen=? WHERE id=?").bind(now,auth.player.id).run();
   const [people,votes,images]=await Promise.all([
     db.prepare("SELECT id,name,last_seen FROM players WHERE room=? ORDER BY created_at,id").bind(room.code).all<{id:string;name:string;last_seen:number}>(),
     db.prepare("SELECT b.poll,b.player,b.choice,b.reason,p.name FROM ballots b JOIN players p ON p.id=b.player WHERE b.room=? ORDER BY b.updated_at").bind(room.code).all<Ballot>(),
@@ -60,7 +73,7 @@ export async function roomState(db:D1Database, code:string, token:string):Promis
     const max=Math.max(...Object.values(counts));
     results[id]={counts,total:rows.length,winners:rows.length?Object.keys(counts).filter(k=>counts[k]===max):[],reasons:rows.filter(v=>v.reason).map(v=>({name:v.name,choice:v.choice,reason:v.reason}))};
   }
-  return {room:{code:room.code,title:room.title,status:room.status,step:room.step,phase:room.phase,version:room.version},role:auth.role,
+  return {room:{code:room.code,title:room.title,status:room.status,step:room.step,phase:room.phase,version:room.version},role:auth.role,hostOnline:online,
     players:people.results.map(p=>({id:p.id,name:p.name,online:now-p.last_seen<30000 || p.id===auth.player?.id,voted:currentVotes.some(v=>v.player===p.id)})),
     portraits:Object.fromEntries(images.results.map(i=>[i.character,"/api/images/"+i.object_key])),submitted:currentVotes.length,
     myVote:mine?{choice:mine.choice,reason:mine.reason}:null,results};
@@ -84,8 +97,9 @@ export async function castVote(db:D1Database, code:string, token:string, poll:st
   if(!auth.player) throw new GameError("主持人不计票。请使用玩家入口加入后投票。",403);
   if(!Object.hasOwn(polls,poll) || !polls[poll].options.some(o=>o.key===choice)) throw new GameError("无效的投票选项。");
   if(reason.length>300) throw new GameError("理由请控制在 300 字以内。");
-  const r=await db.prepare("INSERT INTO ballots(room,poll,player,choice,reason,updated_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM rooms WHERE code=? AND status='playing' AND step=? AND phase='open') ON CONFLICT(room,poll,player) DO UPDATE SET choice=excluded.choice,reason=excluded.reason,updated_at=excluded.updated_at").bind(room.code,poll,auth.player.id,choice,reason.trim(),Date.now(),room.code,pollSteps[poll]).run();
-  if(!r.meta.changes) throw new GameError("本轮投票尚未开启或已经截止。",409);
+  const now=Date.now();
+  const r=await db.prepare("INSERT INTO ballots(room,poll,player,choice,reason,updated_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM rooms WHERE code=? AND status='playing' AND step=? AND phase='open') AND EXISTS(SELECT 1 FROM room_host_presence WHERE room=? AND closed=0 AND seen_at>?) ON CONFLICT(room,poll,player) DO UPDATE SET choice=excluded.choice,reason=excluded.reason,updated_at=excluded.updated_at").bind(room.code,poll,auth.player.id,choice,reason.trim(),now,room.code,pollSteps[poll],room.code,now-HOST_TIMEOUT_MS).run();
+  if(!r.meta.changes) throw new GameError("主持人已离线，或本轮投票尚未开启、已经截止。",409);
 }
 export async function exportResults(db:D1Database, code:string, token:string) {
   const state=await roomState(db,code,token);

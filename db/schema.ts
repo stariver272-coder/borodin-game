@@ -22,3 +22,9 @@ export const hostSessions = sqliteTable("host_sessions", {
 export const hostLoginLimits = sqliteTable("host_login_limits", {
   ipHash: text("ip_hash").primaryKey(), windowStart: integer("window_start").notNull(), attempts: integer("attempts").notNull(),
 }, t => [index("host_login_limits_window_idx").on(t.windowStart)]);
+export const roomHostPresence = sqliteTable("room_host_presence", {
+  room: text("room").notNull().references(() => rooms.code),
+  sessionId: text("session_id").notNull(),
+  seenAt: integer("seen_at").notNull(),
+  closed: integer("closed").notNull().default(0),
+}, t => [primaryKey({columns: [t.room, t.sessionId]}), index("room_host_presence_online_idx").on(t.room, t.closed, t.seenAt)]);

@@ -56,6 +56,15 @@ CREATE TABLE IF NOT EXISTS `host_sessions` (
 );
 
 CREATE INDEX IF NOT EXISTS `host_sessions_expiry_idx` ON `host_sessions` (`expires_at`);
+CREATE TABLE IF NOT EXISTS `room_host_presence` (
+  `room` text NOT NULL,
+  `session_id` text NOT NULL,
+  `seen_at` integer NOT NULL,
+  `closed` integer DEFAULT 0 NOT NULL,
+  PRIMARY KEY (`room`, `session_id`),
+  FOREIGN KEY (`room`) REFERENCES `rooms` (`code`) ON UPDATE no action ON DELETE no action
+);
+CREATE INDEX IF NOT EXISTS `room_host_presence_online_idx` ON `room_host_presence` (`room`, `closed`, `seen_at`);
 SELECT name FROM sqlite_master
-WHERE type = 'table' AND name IN ('rooms', 'players', 'ballots', 'portraits', 'host_sessions', 'host_login_limits')
+WHERE type = 'table' AND name IN ('rooms', 'players', 'ballots', 'portraits', 'host_sessions', 'host_login_limits', 'room_host_presence')
 ORDER BY name;

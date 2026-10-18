@@ -9,6 +9,7 @@ if (config.name !== 'borodin-game' || config.vars?.AUTH_MODE !== 'password'
     || !database?.database_id || database.database_id === '00000000-0000-4000-8000-000000000000') {
   throw new Error('Run pnpm run build:cloudflare with your real D1 Database ID before deploying.');
 }
+await import('./migrate-cloudflare.mjs');
 const result = spawnSync(process.execPath, [
   '--import', new URL('./sites-env.mjs', import.meta.url).href,
   fileURLToPath(new URL('../node_modules/wrangler/bin/wrangler.js', import.meta.url)),

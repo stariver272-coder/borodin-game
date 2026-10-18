@@ -13,7 +13,7 @@
 ## 在自己的 Cloudflare 账号部署
 
 1. 当前项目已按用户确认配置 D1 Database ID：`95db5a47-b245-4ffa-a2b3-477408f52a85`，正式构建会自动使用它，无需重复创建数据库或填写 ID。打开 **Storage & databases → D1 SQL database**，选择这个数据库。若部署到另一个 Cloudflare 账号，请创建自己的数据库，并用下表的构建变量覆盖 ID。
-2. 打开新数据库的 **Console**，先清空输入框，再复制 [deployment/initialize.sql](deployment/initialize.sql) 的全部内容，粘贴后点击 **Execute**。粘贴的内容应从 `CREATE TABLE` 开始，不包含控制台的 `>` 提示符。文件没有 `--` 行注释，复制时即使丢失换行也能执行；旧版若提示 `No SQL statements detected`，请用此版本替换整个输入框。完成后会列出六张表：`rooms`、`players`、`ballots`、`portraits`、`host_sessions`、`host_login_limits`。这份初始化 SQL 只创建不存在的表和索引，不删除已有数据。它用于首次部署；后续升级按顺序执行 `drizzle/` 中尚未应用的迁移，已经执行过的迁移不要重放。若之前已有原来的四张表，本次也可只执行 `drizzle/0001_host_auth.sql`。
+2. 打开新数据库的 **Console**，先清空输入框，再复制 [deployment/initialize.sql](deployment/initialize.sql) 的全部内容，粘贴后点击 **Execute**。粘贴的内容应从 `CREATE TABLE` 开始，不包含控制台的 `>` 提示符。文件没有 `--` 行注释，复制时即使丢失换行也能执行；旧版若提示 `No SQL statements detected`，请用此版本替换整个输入框。新版初始化会创建七张表：`rooms`、`players`、`ballots`、`portraits`、`host_sessions`、`host_login_limits`、`room_host_presence`；控制台显示“returned no data”时，单独执行文件末尾的 SELECT 检查。这份初始化 SQL 只创建不存在的表和索引，不删除已有数据。它用于首次部署；后续升级按顺序执行 `drizzle/` 中尚未应用的迁移，已经执行过的迁移不要重放。若之前已有原来的四张表，需依次补上 `drizzle/0001_host_auth.sql` 和 `drizzle/0002_host_presence.sql`。
 3. 在 **Workers & Pages → Create application → GitHub** 选择 `the1valid/borodin-game`，Worker 名称填 **borodin-game**，分支选 `main`，项目目录用仓库根目录。
 4. 构建命令填 **`pnpm run build:cloudflare`**，部署命令填 **`pnpm run deploy:cloudflare`**。在构建环境变量中添加下表中的必需设置，然后保存并部署。新克隆的仓库默认使用独立 Cloudflare 配置，普通 `pnpm run build` 也会生成同样的数据库绑定，且默认不绑定 R2。数据库 ID 统一保存在 `deployment/cloudflare.json`；只有原 Sites 的专用执行配置会使用它的平台绑定。
 5. 打开 Worker 的 **Settings → Variables and Secrets → Add**，类型选 **Secret**，名称填 **HOST_PASSWORD**，值填自己生成的至少 16 位随机密码，保存并部署。这个是运行时密钥，不是构建变量；不用发给别人，也不要提交到 GitHub。未设置密码时，主持人登录保持关闭。
@@ -45,6 +45,18 @@
 4. 每个参与身份每轮只有一条有效投票，截止前修改会覆盖原票。先只显示已投人数，主持人截止后才公布票数与理由。
 5. 政策题多数票决定展示的回应；平票或无人投票时展示双方回应。身份题的剧本设定答案为秘书C，不由多数票改写。
 6. 最后可导出 TXT 讨论记录。要重新组织一场讨论，创建新房间即可。
+
+主持人关闭房间页、返回首页或离线后，玩家会显示“主持人已离线，同步已暂停”，保留当前进度和投票。关闭通知正常送达时，在玩家下一次同步后暂停；浏览器未送达通知时，以最后一次有效心跳后 45 秒为离线判定，玩家下一次成功同步时暂停。主持人开着多个房间标签页时，只有最后一个离开或全部超时才会暂停。
+
+主持人回来后，玩家点击“恢复同步”继续。暂停期间没有定时后台探测；如果主持人仍未回来，手动检查一次后继续保持暂停。讨论结束也会停止自动同步；连续三次连接失败会暂停重试，避免断网或额度用尽时无限请求。浏览器后台冻结或设备休眠也可能造成心跳超时。
+
+这减少的是自动同步的请求和数据库读写；离线判定前的少量请求、已有数据占用的存储，以及手动访问网站仍会计入相应使用量。更新上线后，主持人与玩家都需刷新旧页面才会使用新逻辑。
+
+### 已部署站点升级
+
+本次新增 `room_host_presence` 表，记录各主持人页面的在线心跳。`pnpm run build` 在 Cloudflare Workers Builds 的 `main` 分支完成构建后，会先执行可重复运行的 `drizzle/0002_host_presence.sql`，再交给现有部署命令上传 Worker；本地构建和 GitHub Actions 检查不会访问远程数据库。`pnpm run deploy:cloudflare` 也会先执行该升级。
+
+Cloudflare 构建使用的 API token 需要目标账号的 **D1 Edit** 权限。升级失败会终止构建，避免上传依赖缺失表的新版本；旧版本继续运行。若日志提示数据库权限不足，在 Worker 的 Settings → Builds → API token 中选择具有 D1 Edit 权限的 token，再重试部署。不需要重建数据库，原房间与投票会保留。手动部署时使用 `pnpm run deploy:cloudflare`；其他分支的独立预览数据库须先应用同一迁移。
 
 主持人不计票。如需独自体验，用侧栏“打开玩家页试投票”另开一个标签页，作为参与者加入。不要分享主持人的浏览器存储或密钥。
 
@@ -89,7 +101,7 @@
 
 ## 技术与运行
 
-React / TypeScript / Vinext，Cloudflare Workers 服务端，D1 保存房间与投票，R2 保存图片。浏览器每 2.5 秒获取房间状态，短暂断线后自动重试；后台页面可能被浏览器降低刷新频率。共享数据来自服务器，本地存储只保存参与身份。
+React / TypeScript / Vinext，Cloudflare Workers 服务端，D1 保存房间、投票与主持人在线心跳，R2 保存图片。活跃房间每次请求完成后等 2.5 秒再同步；主持人心跳最多每 10 秒写入一次。主持人离线、讨论结束或连续三次连接失败后清除定时器，直到手动恢复或重新打开页面。共享数据来自服务器，本地存储只保存参与身份。
 
 当前使用目标是一名主持人与约 30 位参与者。程序允许每个房间最多 100 个参与身份，主持人不占投票人数；100 是程序限制，不代表已做百人真机负载测试。昵称参与采用浏览器身份，不能保证一个自然人只创建一个身份；适合课堂讨论，不适合作为严格身份认证的考试或正式选举。
 
@@ -111,6 +123,7 @@ pnpm run test:classroom
 ```sh
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_watery_wallow.sql
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_host_auth.sql
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0002_host_presence.sql
 ```
 
 本地数据与线上数据彼此独立。不要重放已执行的迁移；不要提交运行时数据、密钥、用户图片或浏览器存储。
@@ -120,6 +133,8 @@ node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1
 ## 已检查与待验证
 
 集成测试覆盖：两位独立参与者、同时投票、改票不增票、隐藏投票中统计、平票、零票、票数较多分支、截止后拒投、主持人版本冲突、刷新恢复、跨房间权限、四轮完整流程、导出权限、图片格式校验、共享图片与不同拥有者的素材隔离。
+
+同步测试使用真实客户端轮询控制器与 API，模拟 30 位玩家：主持人退出后暂停、推进十分钟计时仍无新轮询、手动恢复、主持人仍离线时单次检查后暂停、结束后停止、断网有限重试和请求取消。另覆盖多主持标签页、关闭通知与心跳乱序、45 秒超时、离线期间拒投及恢复后保留原票。
 
 30 位独立玩家加一名主持人的本地 Worker HTTP 测试覆盖四轮共 120 张最终有效票、同步轮询、并发投票、重复请求、改票、结果一致性、截止后拒投和完整导出。测试同时走真实密码登录接口；认证集成测试另覆盖伪造身份头、跨来源请求、错误密码、会话过期、密码轮换、退出登录及限流。最新检查结果见 GitHub Actions。
 
