@@ -106,6 +106,23 @@ try {
   for (let step = 0; step < story.scenes.length; step++) {
     const scene = story.scenes[step];
     if (scene.type !== 'poll') continue;
+    if(scene.act>1){
+      assert.equal(current.waitingAct,scene.act);
+      const boundary=story.scenes.findIndex(item=>item.act===scene.act)-1;
+      await Promise.all(players.map(async player=>{
+        let snapshot=await state(player);
+        while(snapshot.reading.step<boundary)snapshot=await action({action:'read',direction:'next',version:snapshot.reading.version},player);
+        assert.equal(snapshot.reading.limit,boundary);
+        await action({action:'read',direction:'next',version:snapshot.reading.version},player,409);
+        await action({action:'control',command:'unlock-act',version:current.room.version},player,403);
+      }));
+      await action({action:'control',command:'open',version:current.room.version},host,409);
+      await control('unlock-act');
+      assert.equal(current.room.unlockedAct,scene.act);assert.equal(current.waitingAct,null);
+      const unlocked=await Promise.all(players.map(state));
+      for(const snapshot of unlocked){assert.equal(snapshot.reading.step,boundary);assert.equal(snapshot.reading.limit,step);}
+      console.log(`PASS: act ${scene.act} held 30 readers until host unlock; unlock preserves individual positions.`);
+    }
     const poll = scene.poll;
     const [first, second] = story.polls[poll].options.map(option => option.key);
     assert(first && second, `Expected two options in ${poll}`);

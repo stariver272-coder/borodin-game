@@ -3,6 +3,7 @@ export const rooms = sqliteTable("rooms", {
   code: text("code").primaryKey(), owner: text("owner").notNull(), hostHash: text("host_hash").notNull(), title: text("title").notNull(),
   status: text("status").notNull().default("lobby"), step: integer("step").notNull().default(0), phase: text("phase").notNull().default("read"),
   version: integer("version").notNull().default(0), createdAt: integer("created_at").notNull(), revealedAnswers: text("revealed_answers").notNull().default("[]"),
+  unlockedAct: integer("unlocked_act").notNull().default(1),
 }, t => [index("rooms_owner_idx").on(t.owner)]);
 export const players = sqliteTable("players", {
   id: text("id").primaryKey(), room: text("room").notNull().references(() => rooms.code), name: text("name").notNull(),

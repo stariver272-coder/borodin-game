@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS `rooms` (
 	`phase` text DEFAULT 'read' NOT NULL,
 	`version` integer DEFAULT 0 NOT NULL,
 	`revealed_answers` text DEFAULT '[]' NOT NULL,
+	`unlocked_act` integer DEFAULT 1 NOT NULL,
 	`created_at` integer NOT NULL
 );
 

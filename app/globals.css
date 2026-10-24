@@ -36,3 +36,6 @@
 
 .story-emphasis{font-weight:700;font-synthesis:weight}
 .narration .story-emphasis{color:var(--ink)}
+.act-waiting{width:100%;padding:18px 20px;background:#f3eee1;border:1px solid #d5c7a5;border-radius:4px;color:var(--ink);line-height:1.8}
+.act-waiting b{font-size:16px}
+.act-waiting p{margin:6px 0 0;font-size:14px}

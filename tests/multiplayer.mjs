@@ -20,9 +20,35 @@ assert.deepEqual(legacy.prepare('SELECT step FROM room_reading_progress ORDER BY
 legacy.exec(readFileSync('drizzle/0004_discussion_answers.sql','utf8'));
 assert.equal(legacy.prepare('SELECT revealed_answers FROM rooms').get().revealed_answers,'[]');
 assert.deepEqual(legacy.prepare('SELECT step FROM room_reading_progress ORDER BY reader').all().map(row=>row.step),[5,5]);
+assert.equal(legacy.prepare('SELECT count(*) AS n FROM ballots').get().n,1);
+const upgrades=[
+ {code:'LOBBY2',status:'lobby',step:0,reader:0,answers:[],act:1},
+ {code:'ACTEND',status:'playing',step:5,reader:6,answers:['scene-7'],act:1},
+ {code:'READ22',status:'playing',step:5,reader:7,answers:[],act:2},
+ {code:'VOTE22',status:'playing',step:8,reader:0,answers:[],act:2},
+ {code:'READ33',status:'playing',step:8,reader:10,answers:[],act:3},
+ {code:'VOTE33',status:'playing',step:12,reader:0,answers:[],act:3},
+ {code:'ANSW22',status:'playing',step:5,reader:0,answers:['scene-10'],act:2},
+ {code:'ANSW33',status:'playing',step:8,reader:0,answers:['scene-14'],act:3},
+ {code:'FINISH',status:'finished',step:0,reader:0,answers:[],act:3}
+];
+for(const item of upgrades){
+ legacy.prepare("INSERT INTO rooms(code,owner,host_hash,title,status,step,phase,created_at,revealed_answers) VALUES(?,'owner','hash','legacy',?,?,'closed',1,?)").run(item.code,item.status,item.step,JSON.stringify(item.answers));
+ legacy.prepare("INSERT INTO room_reading_progress(room,reader,step) VALUES(?,'host',?)").run(item.code,item.reader);
+}
+legacy.exec(readFileSync('drizzle/0005_act_unlocks.sql','utf8'));
+for(const item of upgrades){
+ const row=legacy.prepare('SELECT * FROM rooms WHERE code=?').get(item.code);
+ assert.equal(row.unlocked_act,item.act,item.code);assert.equal(row.version,1);
+ assert.equal(row.step,item.step);assert.equal(row.revealed_answers,JSON.stringify(item.answers));
+ assert.equal(legacy.prepare('SELECT step FROM room_reading_progress WHERE room=?').get(item.code).step,item.reader);
+}
+assert.equal(legacy.prepare("SELECT unlocked_act FROM rooms WHERE code='ABC234'").get().unlocked_act,1);
 assert.equal(legacy.prepare('SELECT count(*) AS n FROM ballots').get().n,1);legacy.close();
 const fresh=new DatabaseSync(':memory:');fresh.exec(readFileSync('deployment/initialize.sql','utf8'));
-assert.equal(fresh.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table'").get().n,8);fresh.close();
+assert.equal(fresh.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table'").get().n,8);
+fresh.exec("INSERT INTO rooms(code,owner,host_hash,title,created_at) VALUES('NEW234','owner','hash','fresh',1)");
+assert.equal(fresh.prepare('SELECT unlocked_act FROM rooms').get().unlocked_act,1);fresh.close();
 class Prepared{constructor(sql,args=[]){this.sql=sql;this.args=args;}bind(...args){return new Prepared(this.sql,args);}async first(){return sqlite.prepare(this.sql).get(...this.args)||null;}async all(){return {results:sqlite.prepare(this.sql).all(...this.args)};}async run(){const r=sqlite.prepare(this.sql).run(...this.args);return {success:true,meta:{changes:Number(r.changes)}};}}
 const objects=new Map();
 globalThis.__testEnv={AUTH_MODE:'sites',DB:{prepare(sql){return new Prepared(sql);},async batch(statements){return Promise.all(statements.map(statement=>statement.all()));}},BUCKET:{async put(key,bytes,options){objects.set(key,{bytes,options});},async delete(key){objects.delete(key);},async get(key){const o=objects.get(key);return o?{body:o.bytes,writeHttpMetadata(h){h.set('Content-Type',o.options.httpMetadata.contentType);}}:null;}}};
@@ -45,6 +71,8 @@ assert.equal((await post(reveal(hostB,0),host.token)).status,401);
 assert.equal((await post({action:'control',code:host.code,command:'start',version:0},a.token)).status,403);
 assert.equal((await post({action:'vote',code:host.code,poll:'identity',choice:'C'},a.token)).status,409);
 let current=await state(host);assert.equal(current.players.length,2);assert(!('host_hash' in current.room));assert(!('owner' in current.room));
+assert.equal(current.room.unlockedAct,1);assert.equal(current.waitingAct,null);
+assert.equal((await post({action:'control',code:host.code,command:'unlock-act',version:current.room.version},host.token)).status,409);
 async function control(command){current=await call({action:'control',code:host.code,command,version:current.room.version},host.token);return current;}
 
 const story=JSON.parse(readFileSync('content/story.json','utf8'));
@@ -54,6 +82,7 @@ async function reach(s,step){let snapshot=await state(s);while(snapshot.reading.
 const vote=(s,poll,choice,reason='')=>call({action:'vote',code:s.code,poll,choice,reason},s.token);
 assert.equal((await post({action:'read',code:a.code,direction:'next',version:0},a.token)).status,409);
 await control('start');
+assert.equal((await post({action:'control',code:host.code,command:'unlock-act',version:current.room.version},host.token)).status,409);
 assert.equal((await post(reveal(host,current.room.version),host.token)).status,409);
 assert.equal(current.room.step,3);assert.equal(current.waitingPoll,'identity');
 assert.equal(current.arrived,0);assert.equal(current.reading.step,0);
@@ -81,6 +110,7 @@ await read(a,'previous');assert.equal((await state(host)).arrived,0);
 await read(a);await reach(host,3);assert.equal((await state(host)).arrived,1); // Host is excluded.
 assert.equal((await post({action:'read',code:a.code,direction:'next',version:(await state(a)).reading.version},a.token)).status,409);
 await control('open');assert.equal((await state(b)).reading.step,0); // Opening never jumps a slower reader.
+assert.equal((await post({action:'control',code:host.code,command:'unlock-act',version:current.room.version},host.token)).status,409);
 assert.equal((await post({action:'vote',code:b.code,poll:'identity',choice:'C'},b.token)).status,409);
 await reach(b,3);assert.equal((await state(host)).arrived,2);
 await Promise.all([vote(a,'identity','C','反复回避承诺'),vote(b,'identity','H','我有不同理解')]);
@@ -99,6 +129,37 @@ const assignment=await read(a);assert.equal(assignment.reading.step,4);
 assert(story.scenes[4].task.intro);assert(story.scenes[4].task.objectives.length>0);
 assert.equal((await state(b)).reading.step,3); // Reading the role assignment is independent.
 for(const scene of pollScenes.slice(1)){
+ if(scene.act>1){
+  current=await state(host);
+  const boundary=story.scenes.findIndex(item=>item.act===scene.act)-1;
+  assert.equal(current.waitingAct,scene.act);assert.equal(current.waitingPoll,null);
+  assert.equal(current.reading.limit,boundary);
+  const blocked=await reach(a,boundary),slowBefore=await state(b),hostBefore=current;
+  assert.equal((await post({action:'read',code:a.code,direction:'next',version:blocked.reading.version},a.token)).status,409);
+  assert.equal((await post({action:'control',code:host.code,command:'open',version:current.room.version},host.token)).status,409);
+  assert.equal((await post({action:'control',code:host.code,command:'finish',version:current.room.version},host.token)).status,409);
+  assert.equal((await post({action:'vote',code:a.code,poll:scene.poll,choice:'A'},a.token)).status,409);
+  assert.equal((await post(reveal(host,current.room.version,scene.act===2?'scene-10':'scene-14'),host.token)).status,409);
+  const unlock={action:'control',code:host.code,command:'unlock-act',version:current.room.version};
+  assert.equal((await post(unlock,a.token)).status,403);
+  assert.equal((await post({...unlock,code:hostB.code},host.token)).status,401);
+  assert.equal((await post({...unlock,version:current.room.version-1},host.token)).status,409);
+  const unlocks=await Promise.all([post(unlock,host.token),post(unlock,host.token)]);
+  assert.deepEqual(unlocks.map(r=>r.status).sort(),[200,409]);
+  current=await state(host);assert.equal(current.room.unlockedAct,scene.act);
+  assert.equal(current.waitingAct,null);assert.equal(current.waitingPoll,scene.poll);
+  assert.equal(current.room.phase,'closed');assert.equal(current.room.step,hostBefore.room.step);
+  assert.equal(current.reading.step,hostBefore.reading.step);assert.equal(current.reading.version,hostBefore.reading.version);
+  assert.equal(current.reading.limit,scene.step);
+  const unlocked=await state(a),slowAfter=await state(b);
+  assert.equal(unlocked.reading.step,boundary);assert.equal(unlocked.reading.version,blocked.reading.version);
+  assert.equal(slowAfter.reading.step,slowBefore.reading.step);assert.equal(slowAfter.reading.version,slowBefore.reading.version);
+  assert.equal(progress.newerState(unlocked,blocked).room.unlockedAct,scene.act);
+  assert.equal((await post(unlock,host.token)).status,409);
+  assert.equal((await post({...unlock,version:current.room.version},host.token)).status,409);
+  await read(a,'previous');await read(a); // Backtracking and reload preserve the unlocked act.
+  assert.equal((await state(a)).room.unlockedAct,scene.act);
+ }
  await Promise.all([reach(a,scene.step),reach(b,scene.step)]);
  current=await state(host);assert.equal(current.arrived,2);assert.equal(current.waitingPoll,scene.poll);
  await control('open');const id=scene.poll;
@@ -139,6 +200,7 @@ assert.equal((await reach(a,14)).reading.step,14); // Finishing does not cut off
 assert.equal((await post({action:'join',code:host.code,name:'迟到者'})).status,400);
 console.log('PASS: independent forward/back reading, persistent cursors, arrival counts, host exclusion, navigation races, voting barriers, role handoff, four rounds and final reading.');
 console.log('PASS: answer migration preserves rooms/ballots; answers hidden until authorized host reveal; room isolation, stale-response protection, retry, reload and backtracking persistence; reading progress unchanged.');
+console.log('PASS: act 2/3 host gates; premature navigation, voting and reveals rejected; unlock permissions, concurrency, persistence and independent cursors; migration preserves ongoing/finished rooms.');
 // Verify image content validation, persistence, shared room visibility and ownership.
 function ownerRequest(url,init={},owner='owner-A'){return new Request(url,{...init,headers:{'oai-authenticated-user-id':owner,...init.headers}});}
 const png=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j1ioAAAAASUVORK5CYII=','base64'));
