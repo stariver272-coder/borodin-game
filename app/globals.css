@@ -33,3 +33,6 @@
 .reference-answer .reference-answer-body p+p{margin-top:16px}
 .reference-answer .reference-answer-body .reference-answer-note{font-size:12px;color:#657252}
 @media(max-width:730px){.discussion-answer .discussion-answer-text{font-size:14px}.discussion-answer .button{width:100%}}
+
+.story-emphasis{font-weight:700;font-synthesis:weight}
+.narration .story-emphasis{color:var(--ink)}

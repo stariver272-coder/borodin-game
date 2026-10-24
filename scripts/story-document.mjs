@@ -124,7 +124,7 @@ export function parseStoryDocument(input, filename = 'content/剧情台本.txt')
       if (answer) { answers[b.id] = answer; story.history[id].hasAnswer = true; }
     } else {
       if (story.ending) fail(b.line, '只能有一段终场。');
-      story.ending = { kicker: value(b, '时间地点'), title: value(b, '标题'), prompt: value(b, '讨论引导', true), question: value(b, '讨论问题'), context: value(b, '讨论补充', true), analysis: value(b, '结语', true) };
+      story.ending = { kicker: value(b, '时间地点', true), title: value(b, '标题'), prompt: value(b, '讨论引导', true), question: value(b, '讨论问题'), context: value(b, '讨论补充', true), analysis: value(b, '结语', true) };
     }
     finish(b); story.scenes.push(scene);
   }
