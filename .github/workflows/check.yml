@@ -32,7 +32,11 @@ jobs:
         run: npm install --global pnpm@11.25.0
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Check TypeScript
+      - name: Read editable story document
+        run: node scripts/compile-story.mjs
+      - name: Check story document parsing
+        run: node tests/story-document.mjs
+      - name: Check TypeScript types
         run: node node_modules/typescript/bin/tsc --noEmit
       - name: Check multiplayer behavior
         run: node tests/multiplayer.mjs

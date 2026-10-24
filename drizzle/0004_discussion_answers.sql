@@ -1,0 +1,1 @@
+ALTER TABLE `rooms` ADD `revealed_answers` text DEFAULT '[]' NOT NULL;

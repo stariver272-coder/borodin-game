@@ -5,7 +5,7 @@
 
 一、参与者之间怎么连接？
 
-所有设备连接同一个服务器。主持人发送推进或截止指令，玩家发送投票，服务器保存统一的房间状态；各页面约每 2.5 秒读取更新。
+所有设备连接同一个服务器。主持人统一开启或截止投票，玩家各自翻页阅读并在投票页集合。主持人可看到到达人数；服务器分别保存个人阅读进度和共享投票状态；各页面约每 5 秒读取更新。
 房间码只选择场次，不会自动连接两台彼此不可达的电脑。
 
 方案 A：使用网上的网址
@@ -50,6 +50,12 @@ Node.js 最低版本见 package.json（当前为 >=22.13）；包管理器版本
 
    node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_host_auth.sql
 
+   node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0002_host_presence.sql
+
+   node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0003_reading_progress.sql
+
+   node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0004_discussion_answers.sql
+
    不要对已经执行过此迁移的本地数据库重复执行。数据库和上传图片保存在本地运行目录，和线上数据相互独立。
 
 4. 开发服务允许局域网连接：
@@ -79,8 +85,8 @@ Node.js 最低版本见 package.json（当前为 >=22.13）；包管理器版本
 
 直接编辑源码：
 - 人物图片放到 public/characters/。
-- content/characters.json 的 image 字段填写 /characters/你的图片名.webp。
-- content/story.json 修改台词、选项、回应和历史回顾。
+- content/剧情台本.txt 的相应【人物 编号】中，图片字段填写 /characters/你的图片名.webp。
+- content/剧情台本.txt 集中修改台词、选项、回应、身份揭晓、任务和历史回顾。
 - app/globals.css 修改颜色、字体与布局。
 - README.md 提供项目结构与更多说明。
 
@@ -90,7 +96,7 @@ ZIP 不含线上房间记录或用户已经上传的图片；这些是服务器�
 
 本项目有服务器、数据库和图片存储，不能只把页面文件上传到纯静态托管就实现多人投票。
 原线上版本由 Sites 管理登录、Cloudflare Workers、D1 数据库和 R2 图片存储。
-仓库已提供独立 Cloudflare 部署和主持人密码登录；按 README.md 创建 D1、初始化六张表并配置 Worker 即可。
+仓库已提供独立 Cloudflare 部署和主持人密码登录；按 README.md 创建 D1、初始化八张表并配置 Worker 即可。
 R2 是可选项；未配置 R2 时使用内置人物图或姓名占位，30 人同步投票仍可完整使用。
 复制项目后，不会自动获得原网站的数据库、上传图片或登录配置。
 
@@ -99,3 +105,11 @@ R2 是可选项；未配置 R2 时使用内置人物图或姓名占位，30 人�
 源码提交：ec00860dd25d2cd77594c00d90a4746b2af8ae3e
 打包包含该提交的全部已跟踪源码，另附本说明。
 不包含 node_modules、构建产物、Git 历史、运行时数据和密钥。
+
+六、直接修改剧情台本
+
+打开 content/剧情台本.txt，按文档开头说明编辑中文内容。人物、台词、投票、揭晓、任务、历史回顾和终场都集中在这里。
+保存为 UTF-8。运行 npm run story:check 可检查格式；npm run dev 和 npm run build 会自动读取。线上生效还需重新部署。
+在历史回顾（如 scene-7）的“参考答案：”后编辑答案。默认隐藏，主持人点击“揭开答案”后，全体参与者在下次约 5 秒的同步时看到，刷新仍然保留。
+content/story.json、content/characters.json 和 content/answers.json 是自动生成文件，请不要在那里修改。
+已有数据库上线此功能前，按顺序补齐尚未执行的迁移，最新为 drizzle/0004_discussion_answers.sql；已经执行过的迁移不要重复执行。

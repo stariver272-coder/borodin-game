@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { storyTitle, storyDescription } from "@/lib/story";
 
 export const metadata: Metadata = {
-  title: "鲍罗廷的秘书：三次抉择",
-  description: "进入历史情境，共同作出选择。主持人带领、多人同步投票的文字游戏。",
+  title: storyTitle,
+  description: storyDescription,
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

@@ -2,7 +2,7 @@
   {
     "id": "borodin",
     "name": "鲍罗廷",
-    "description": "听取意见，作出抉择",
+    "description": "共产国际驻中国代表，广州国民政府高级顾问",
     "monogram": "鲍",
     "color": "#345c52",
     "image": ""
@@ -10,7 +10,7 @@
   {
     "id": "secretary_c",
     "name": "秘书C",
-    "description": "参与宣言讨论",
+    "description": "鲍罗廷的秘书",
     "monogram": "C",
     "color": "#875846",
     "image": ""
@@ -18,7 +18,7 @@
   {
     "id": "secretary_h",
     "name": "秘书H",
-    "description": "由参与者共同提出建议",
+    "description": "鲍罗廷的秘书",
     "monogram": "H",
     "color": "#496574",
     "image": ""
@@ -26,7 +26,7 @@
   {
     "id": "liaison",
     "name": "联络代表",
-    "description": "转达合作条件",
+    "description": "国民党消息人士，负责转达合作条件",
     "monogram": "联",
     "color": "#766142",
     "image": ""

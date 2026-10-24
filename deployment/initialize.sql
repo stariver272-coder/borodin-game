@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS `rooms` (
 	`step` integer DEFAULT 0 NOT NULL,
 	`phase` text DEFAULT 'read' NOT NULL,
 	`version` integer DEFAULT 0 NOT NULL,
+	`revealed_answers` text DEFAULT '[]' NOT NULL,
 	`created_at` integer NOT NULL
 );
 
@@ -65,6 +66,14 @@ CREATE TABLE IF NOT EXISTS `room_host_presence` (
   FOREIGN KEY (`room`) REFERENCES `rooms` (`code`) ON UPDATE no action ON DELETE no action
 );
 CREATE INDEX IF NOT EXISTS `room_host_presence_online_idx` ON `room_host_presence` (`room`, `closed`, `seen_at`);
+CREATE TABLE IF NOT EXISTS `room_reading_progress` (
+  `room` text NOT NULL,
+  `reader` text NOT NULL,
+  `step` integer DEFAULT 0 NOT NULL,
+  `version` integer DEFAULT 0 NOT NULL,
+  PRIMARY KEY (`room`, `reader`),
+  FOREIGN KEY (`room`) REFERENCES `rooms` (`code`) ON UPDATE no action ON DELETE no action
+);
 SELECT name FROM sqlite_master
-WHERE type = 'table' AND name IN ('rooms', 'players', 'ballots', 'portraits', 'host_sessions', 'host_login_limits', 'room_host_presence')
+WHERE type = 'table' AND name IN ('rooms', 'players', 'ballots', 'portraits', 'host_sessions', 'host_login_limits', 'room_host_presence', 'room_reading_progress')
 ORDER BY name;

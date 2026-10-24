@@ -1,4 +1,4 @@
-import {createRoom,joinRoom,roomState,controlRoom,castVote,exportResults,GameError} from "@/lib/engine";
+import {createRoom,joinRoom,roomState,controlRoom,moveReader,castVote,revealAnswer,exportResults,GameError} from "@/lib/engine";
 import {database,bearer,json,failure,sameSite} from "@/lib/http";
 import {requireHost} from "@/lib/host-auth";
 export const dynamic="force-dynamic";
@@ -12,7 +12,9 @@ export async function POST(request:Request) {
     if(body.action==="create")return json(await createRoom(db,await requireHost(request),String(body.title??"")));
     if(body.action==="join")return json(await joinRoom(db,code,String(body.name??"")));
     if(body.action==="control")await controlRoom(db,code,token,String(body.command),Number(body.version));
+    else if(body.action==="read")await moveReader(db,code,token,String(body.direction),Number(body.version));
     else if(body.action==="vote")await castVote(db,code,token,String(body.poll),String(body.choice),String(body.reason??""));
+    else if(body.action==="reveal-answer")await revealAnswer(db,code,token,String(body.scene),Number(body.version));
     else if(body.action==="export")return json(await exportResults(db,code,token));
     else throw new GameError("未知操作。");
     return json(await roomState(db,code,token));
